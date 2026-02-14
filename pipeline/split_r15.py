@@ -1,25 +1,31 @@
 import numpy as np
 import trimesh
 
-def extract_submesh(mesh: trimesh.Trimesh, vertex_mask: np.ndarray) -> trimesh.Trimesh:
-    """
-    Extract submesh based on vertex mask.
-    vertex_mask: boolean array of length mesh.vertices
-    """
+def split_mesh(mesh, labels_dict):
 
-    if len(vertex_mask) != mesh.vertices.shape[0]:
-        raise ValueError("vertex_mask length does not match number of vertices")
+    submeshes = {}
 
-    # A face belongs to the part if ALL its vertices belong
-    face_mask = vertex_mask[mesh.faces].all(axis=1)
+    for part_name, vertex_indices in labels_dict.items():
 
-    faces_idx = np.where(face_mask)[0]
+        # If empty, skip
+        if len(vertex_indices) == 0:
+            continue
 
-    if len(faces_idx) == 0:
-        return trimesh.Trimesh(vertices=np.array([]), faces=np.array([]))
+        # Convert indices → vertex mask
+        vertex_mask = np.zeros(mesh.vertices.shape[0], dtype=bool)
+        vertex_mask[vertex_indices] = True
 
-    return mesh.submesh([faces_idx], append=True, repair=False)
+        # Convert vertex mask → face mask
+        face_mask = vertex_mask[mesh.faces].all(axis=1)
+        faces_idx = np.where(face_mask)[0]
 
+        if len(faces_idx) == 0:
+            continue
+
+        sub = mesh.submesh([faces_idx], append=True, repair=False)
+        submeshes[part_name] = sub
+
+    return submeshes
 
 
 def split_mesh(mesh, labels_dict):
