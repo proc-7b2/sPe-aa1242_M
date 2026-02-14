@@ -32,7 +32,7 @@ jobs:
       - name: Create output folder
         run: |
           mkdir -p output
-
+          
       - name: Run pipeline
         run: |
           if [ -z "${{ github.event.inputs.mesh_name }}" ]; then
@@ -40,13 +40,13 @@ jobs:
             for file in input_meshes/*; do
               filename=$(basename "$file")
               name="${filename%.*}"
-              python scripts/run_pipeline.py "$file" "output/${name}_R15.glb"
+              python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
             done
           else
             file="input_meshes/${{ github.event.inputs.mesh_name }}"
             name="${{ github.event.inputs.mesh_name }}"
             name="${name%.*}"
-            python scripts/run_pipeline.py "$file" "output/${name}_R15.glb"
+            python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
           fi
 
       - name: Upload artifact
