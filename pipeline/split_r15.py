@@ -1,17 +1,25 @@
 import numpy as np
 import trimesh
 
+
 def split_mesh(mesh, labels_dict):
+    """
+    labels_dict example:
+    {
+        "Head": array([12, 18, 42, ...]),
+        "UpperTorso": array([...]),
+        ...
+    }
+    """
 
     submeshes = {}
 
     for part_name, vertex_indices in labels_dict.items():
 
-        # If empty, skip
         if len(vertex_indices) == 0:
             continue
 
-        # Convert indices → vertex mask
+        # Convert indices → full vertex mask
         vertex_mask = np.zeros(mesh.vertices.shape[0], dtype=bool)
         vertex_mask[vertex_indices] = True
 
@@ -26,7 +34,6 @@ def split_mesh(mesh, labels_dict):
         submeshes[part_name] = sub
 
     return submeshes
-
 
 def split_mesh(mesh, labels_dict):
     """
