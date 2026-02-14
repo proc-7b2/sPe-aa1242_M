@@ -35,15 +35,16 @@ jobs:
           
       - name: Run pipeline
         run: |
+          mkdir -p output
           if [ -z "${{ github.event.inputs.mesh_name }}" ]; then
             echo "No specific mesh provided. Converting all..."
-            for file in input_meshes/*; do
+            for file in tests/*; do
               filename=$(basename "$file")
               name="${filename%.*}"
               python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
             done
           else
-            file="input_meshes/${{ github.event.inputs.mesh_name }}"
+            file="tests/${{ github.event.inputs.mesh_name }}"
             name="${{ github.event.inputs.mesh_name }}"
             name="${name%.*}"
             python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
