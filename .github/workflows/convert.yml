@@ -22,13 +22,20 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run pipeline
+      - name: Create output folder
         run: |
-          python scripts/run_pipeline.py input_meshes/model.obj output/
+          mkdir -p output
+
+      - name: Run pipeline on all meshes
+        run: |
+          for file in input_meshes/*; do
+            filename=$(basename "$file")
+            name="${filename%.*}"
+            python scripts/run_pipeline.py "$file" "output/${name}_R15.glb"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: r15-output
           path: output/
-
