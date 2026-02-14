@@ -2,9 +2,11 @@ name: Convert to R15
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "input_meshes/**"
+    inputs:
+      mesh_name:
+        description: "Mesh filename inside input_meshes/ (example: model.obj). Leave empty to convert all."
+        required: false
+        default: ""
 
 jobs:
   convert:
@@ -26,13 +28,21 @@ jobs:
         run: |
           mkdir -p output
 
-      - name: Run pipeline on all meshes
+      - name: Run pipeline
         run: |
-          for file in input_meshes/*; do
-            filename=$(basename "$file")
-            name="${filename%.*}"
+          if [ -z "${{ github.event.inputs.mesh_name }}" ]; then
+            echo "No specific mesh provided. Converting all..."
+            for file in input_meshes/*; do
+              filename=$(basename "$file")
+              name="${filename%.*}"
+              python scripts/run_pipeline.py "$file" "output/${name}_R15.glb"
+            done
+          else
+            file="input_meshes/${{ github.event.inputs.mesh_name }}"
+            name="${{ github.event.inputs.mesh_name }}"
+            name="${name%.*}"
             python scripts/run_pipeline.py "$file" "output/${name}_R15.glb"
-          done
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
