@@ -1,21 +1,23 @@
-# pipeline/split_r15.py
-import trimesh
 import numpy as np
+import trimesh
 
-def extract_submesh(mesh: trimesh.Trimesh, face_mask: np.ndarray) -> trimesh.Trimesh:
+def extract_submesh(mesh: trimesh.Trimesh, vertex_mask: np.ndarray) -> trimesh.Trimesh:
     """
-    Extract a submesh of the input mesh where the faces correspond to the given mask.
-    face_mask: boolean array with length equal to mesh.faces.shape[0]
+    Extract submesh based on vertex mask.
+    vertex_mask: boolean array of length mesh.vertices
     """
-    if mesh.faces.shape[0] != len(face_mask):
-        raise ValueError("face_mask length does not match number of faces")
-    
+
+    if len(vertex_mask) != mesh.vertices.shape[0]:
+        raise ValueError("vertex_mask length does not match number of vertices")
+
+    # A face belongs to the part if ALL its vertices belong
+    face_mask = vertex_mask[mesh.faces].all(axis=1)
+
     faces_idx = np.where(face_mask)[0]
+
     if len(faces_idx) == 0:
-        # return empty mesh
         return trimesh.Trimesh(vertices=np.array([]), faces=np.array([]))
-    
-    # append=True keeps a single mesh instead of a list
+
     return mesh.submesh([faces_idx], append=True, repair=False)
 
 
