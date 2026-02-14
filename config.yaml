@@ -1,1 +1,14 @@
+height_normalization: true
+target_height: 1.0
 
+skeleton:
+  contraction_strength: 0.5
+  smoothing_iterations: 10
+
+segmentation:
+  arm_split_ratio: 0.5
+  leg_split_ratio: 0.5
+
+export:
+  format: obj
+  preserve_materials: true
