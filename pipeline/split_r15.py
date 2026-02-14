@@ -1,77 +1,48 @@
-import numpy as np
 import trimesh
-
-
-# Official Roblox R15 part names
-R15_PARTS = [
-    "Head",
-    "UpperTorso",
-    "LowerTorso",
-    "LeftUpperArm",
-    "LeftLowerArm",
-    "LeftHand",
-    "RightUpperArm",
-    "RightLowerArm",
-    "RightHand",
-    "LeftUpperLeg",
-    "LeftLowerLeg",
-    "LeftFoot",
-    "RightUpperLeg",
-    "RightLowerLeg",
-    "RightFoot"
-]
-
+import numpy as np
 
 def split_mesh(mesh, labels):
     """
-    Splits a mesh into R15 parts based on per-vertex labels.
+    Split a mesh into submeshes using vertex indices from labels.
 
-    Parameters:
-        mesh (trimesh.Trimesh)
-        labels (np.ndarray or list) -> length must equal number of vertices
-                                        each entry = part name string
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The original mesh to split.
+    labels : dict
+        Dictionary of part_name -> list of vertex indices.
 
-    Returns:
-        dict[str, trimesh.Trimesh]
+    Returns
+    -------
+    dict
+        Dictionary of part_name -> trimesh.Trimesh submesh.
     """
-
-    if len(labels) != len(mesh.vertices):
-        raise ValueError(
-            f"Label count {len(labels)} != vertex count {len(mesh.vertices)}"
-        )
-
-    labels = np.array(labels)
 
     submeshes = {}
 
-    for part_name in R15_PARTS:
+    for part_name, vertex_indices in labels.items():
+        if not vertex_indices:
+            continue  # skip empty parts
 
-        # Find vertices belonging to this part
-        vertex_indices = np.where(labels == part_name)[0]
-
-        if len(vertex_indices) == 0:
-            print(f"[Warning] No vertices found for {part_name}")
+        # Ensure indices are within mesh vertex range
+        vertex_indices = [i for i in vertex_indices if i < len(mesh.vertices)]
+        if not vertex_indices:
             continue
 
-        # Create boolean mask for vertices
+        # Create a mask for which vertices to include
         vertex_mask = np.zeros(len(mesh.vertices), dtype=bool)
         vertex_mask[vertex_indices] = True
 
-        # Select faces where ALL vertices belong to this part
-        face_mask = vertex_mask[mesh.faces].all(axis=1)
-
+        # Get the faces that have all vertices in this part
+        face_mask = np.all(vertex_mask[mesh.faces], axis=1)
         if not np.any(face_mask):
-            print(f"[Warning] No faces found for {part_name}")
-            continue
+            # fallback: include faces with at least one vertex in part
+            face_mask = np.any(vertex_mask[mesh.faces], axis=1)
 
-        # Extract submesh
+        # Extract the submesh
         submesh = mesh.submesh([face_mask], append=True, repair=False)
 
-        if submesh is None or len(submesh.vertices) == 0:
-            print(f"[Warning] Empty mesh for {part_name}")
-            continue
-
+        # Store with part name
         submeshes[part_name] = submesh
 
-    print(f"Successfully split into {len(submeshes)} parts.")
     return submeshes
