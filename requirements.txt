@@ -1,1 +1,9 @@
+trimesh
+numpy
+scipy
+scikit-learn
+networkx
+pymeshlab
+pygeodesic
+pc-skeletor
 
