@@ -18,7 +18,6 @@ R15_NAMES = [
     "RightFoot"
 ]
 
-
 def segment_r15(mesh):
     vertices = mesh.vertices
     faces = mesh.faces
@@ -33,36 +32,38 @@ def segment_r15(mesh):
 
     center_x = mesh.bounding_box.centroid[0]
 
-    labels = {}
+    # Dictionary of part_name -> set of vertex indices
+    labels = {name: set() for name in R15_NAMES}
 
+    # Assign vertices based on face centroids
     face_centroids = mesh.triangles_center
 
-    for name in R15_NAMES:
-        labels[name] = []
-
-    for i, c in enumerate(face_centroids):
-        x, y, z = c
+    for face_idx, centroid in enumerate(face_centroids):
+        x, y, z = centroid
+        verts = faces[face_idx]  # indices of vertices in this face
 
         if y > head_cut:
-            labels["Head"].append(i)
+            labels["Head"].update(verts)
 
         elif y > torso_upper_cut:
-            labels["UpperTorso"].append(i)
+            labels["UpperTorso"].update(verts)
 
         elif y > torso_lower_cut:
-            labels["LowerTorso"].append(i)
+            labels["LowerTorso"].update(verts)
 
         elif y < leg_cut:
             if x < center_x:
-                labels["LeftUpperLeg"].append(i)
+                labels["LeftUpperLeg"].update(verts)
             else:
-                labels["RightUpperLeg"].append(i)
+                labels["RightUpperLeg"].update(verts)
 
         else:
             if x < center_x:
-                labels["LeftUpperArm"].append(i)
+                labels["LeftUpperArm"].update(verts)
             else:
-                labels["RightUpperArm"].append(i)
+                labels["RightUpperArm"].update(verts)
+
+    # Convert sets to sorted lists
+    labels = {k: sorted(list(v)) for k, v in labels.items()}
 
     return labels
-
