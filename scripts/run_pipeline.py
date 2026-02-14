@@ -24,6 +24,22 @@ def main(input_path, output_path):
     # Segment mesh into R15 labels
     labels = segment_r15(mesh)
 
+        # Segment mesh into R15 labels
+    labels = segment_r15(mesh)
+
+    # 🔍 DEBUG INFO — ADD HERE
+    print("Vertices:", mesh.vertices.shape[0])
+    print("Faces:", mesh.faces.shape[0])
+    print("Labels type:", type(labels))
+    try:
+        print("Labels length:", len(labels))
+    except Exception:
+        print("Labels has no length")
+
+    # Split mesh into R15 named parts
+    submeshes = split_mesh(mesh, labels)
+
+
     # Split mesh into R15 named parts
     submeshes = split_mesh(mesh, labels)
 
