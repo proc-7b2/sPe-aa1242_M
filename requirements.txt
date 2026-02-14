@@ -5,5 +5,5 @@ scikit-learn
 networkx
 pymeshlab
 pygeodesic
-pc-skeletor
+#pc-skeletor
 
