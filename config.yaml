@@ -1,6 +1,9 @@
 height_normalization: true
 target_height: 1.0
 
+remove_small_components: true
+small_component_area_ratio: 0.005
+
 skeleton:
   contraction_strength: 0.5
   smoothing_iterations: 10
