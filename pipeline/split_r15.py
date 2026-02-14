@@ -22,16 +22,35 @@ def extract_submesh(mesh: trimesh.Trimesh, vertex_mask: np.ndarray) -> trimesh.T
 
 
 
-def split_mesh(mesh, labels):
+def split_mesh(mesh, labels_dict):
     """
-    labels: list of boolean arrays, one per R15 part
-    Returns: dict of {R15_part_name: submesh}
+    labels_dict: {
+        "Head": vertex_mask,
+        "UpperTorso": vertex_mask,
+        ...
+    }
     """
+
     submeshes = {}
-    for i, label in enumerate(labels):
-        sub = extract_submesh(mesh, label)
-        if sub.faces.shape[0] > 0:  # skip empty
-            part_name = R15_PARTS[i] if i < len(R15_PARTS) else f"Part{i}"
-            submeshes[part_name] = sub
+
+    for part_name, vertex_mask in labels_dict.items():
+
+        # Safety check
+        if len(vertex_mask) != mesh.vertices.shape[0]:
+            raise ValueError(
+                f"{part_name} mask length {len(vertex_mask)} "
+                f"!= vertices {mesh.vertices.shape[0]}"
+            )
+
+        # Convert vertex mask → face mask
+        face_mask = vertex_mask[mesh.faces].all(axis=1)
+        faces_idx = np.where(face_mask)[0]
+
+        if len(faces_idx) == 0:
+            continue
+
+        sub = mesh.submesh([faces_idx], append=True, repair=False)
+        submeshes[part_name] = sub
+
     return submeshes
 
