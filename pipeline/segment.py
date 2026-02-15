@@ -99,75 +99,67 @@ def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45)
             
     return final_r6
 
+def find_snap_height(mesh, target_y):
+    """Finds the nearest vertex height to target_y to snap the cut to an edge loop."""
+    if mesh.is_empty: return target_y
+    vertices = mesh.vertices[:, 1]
+    # Find the vertex height closest to our target split line
+    idx = (np.abs(vertices - target_y)).argmin()
+    return vertices[idx]
+
+
 def split_to_r15(r6_parts):
-    r15 = {}
-    
-    def smart_split(mesh, split_plane_y, prefix, part_names):
-        """
-        Splits an R6 part into R15 segments by checking loose components 
-        before resorting to a hard slice.
-        """
-        if mesh.is_empty:
-            return
-            
-        # 1. Split the mesh into its loose components (e.g., shirt, body, buttons)
-        loose_parts = mesh.split(only_watertight=False)
+    r15 = {"Head": r6_parts["Head"]}
+
+    def smart_slice(mesh, target_y, normal):
+        if mesh.is_empty: return mesh
         
-        above_parts = []
-        below_parts = []
-        to_be_sliced = []
+        # 1. Snap the target_y to the nearest existing vertex loop
+        # This prevents 'shredding' triangles and follows the geometry
+        snapped_y = find_snap_height(mesh, target_y)
+        
+        try:
+            # 2. Slice at the snapped height
+            return mesh.slice_plane([0, snapped_y, 0], normal, cap=True, engine='earcut')
+        except:
+            return mesh.slice_plane([0, target_y, 0], normal, cap=False)
 
-        for p in loose_parts:
-            p_min, p_max = p.bounds
-            # If the entire part is above the line
-            if p_min[1] > split_plane_y:
-                above_parts.append(p)
-            # If the entire part is below the line
-            elif p_max[1] < split_plane_y:
-                below_parts.append(p)
-            # If the part spans across the line, it must be sliced
-            else:
-                to_be_sliced.append(p)
-
-        # 2. Slice only the parts that actually cross the line
-        for p in to_be_sliced:
-            # We use the nearest vertex logic implicitly by slicing at the plane
-            # but we could also snap 'split_plane_y' to the nearest vertex height
-            top = p.slice_plane([0, split_plane_y, 0], [0, 1, 0], cap=True, engine='earcut')
-            bottom = p.slice_plane([0, split_plane_y, 0], [0, -1, 0], cap=True, engine='earcut')
-            above_parts.append(top)
-            below_parts.append(bottom)
-
-        # 3. Re-combine
-        r15[prefix + part_names[0]] = trimesh.util.concatenate(above_parts)
-        r15[prefix + part_names[1]] = trimesh.util.concatenate(below_parts)
-
-    # --- Execution ---
-    # Torso Split
+    # --- TORSO ---
     t = r6_parts["Torso"]
     t_min, t_max = t.bounds
-    split_y = t_min[1] + (t_max[1] - t_min[1]) * 0.4
-    smart_split(t, split_y, "", ["UpperTorso", "LowerTorso"])
+    # Roblox UpperTorso is usually larger than LowerTorso
+    ideal_torso_cut = t_min[1] + (t_max[1] - t_min[1]) * 0.4 
+    
+    r15["UpperTorso"] = smart_slice(t, ideal_torso_cut, [0, 1, 0])
+    r15["LowerTorso"] = smart_slice(t, ideal_torso_cut, [0, -1, 0])
 
-    # Limb Split Logic (3-way)
-    def smart_limb_split(mesh, prefix, is_leg=False):
+    # --- LIMBS ---
+    def split_limb(mesh, prefix, is_leg=False):
         b_min, b_max = mesh.bounds
         h = b_max[1] - b_min[1]
-        c1, c2 = b_min[1] + h*0.33, b_min[1] + h*0.66
+        
+        # R15 Limb proportions: Foot/Hand is small, Lower/Upper are roughly equal
+        c1_ratio = 0.2 if is_leg else 0.15 # Foot/Hand cut
+        c2_ratio = 0.6 # Knee/Elbow cut
+        
+        c1_y = b_min[1] + h * c1_ratio
+        c2_y = b_min[1] + h * c2_ratio
+        
         names = ["Foot", "LowerLeg", "UpperLeg"] if is_leg else ["Hand", "LowerArm", "UpperArm"]
         
-        # This is a nested split: first split at c2, then split the bottom at c1
-        loose = mesh.split(only_watertight=False)
+        # Upper
+        r15[prefix + names[2]] = smart_slice(mesh, c2_y, [0, 1, 0])
         
-        upper = [p for p in loose if p.bounds[0][1] > c2]
-        mid_low = [p for p in loose if p.bounds[1][1] <= c2]
-        cross = [p for p in loose if p.bounds[0][1] <= c2 and p.bounds[1][1] > c2]
+        # Middle
+        mid_section = smart_slice(mesh, c2_y, [0, -1, 0])
+        r15[prefix + names[1]] = smart_slice(mid_section, c1_y, [0, 1, 0])
         
-        # ... apply slice_plane only to 'cross' parts ...
-        # (Combined logic follows the same pattern as Torso)
+        # Lower
+        r15[prefix + names[0]] = smart_slice(mid_section, c1_y, [0, -1, 0])
 
-    # (Limb calls)
-    # ...
+    split_limb(r6_parts["LeftArm"], "Left")
+    split_limb(r6_parts["RightArm"], "Right")
+    split_limb(r6_parts["LeftLeg"], "Left", True)
+    split_limb(r6_parts["RightLeg"], "Right", True)
     
-    r15["Head"] = r6_parts["Head"]
     return r15
