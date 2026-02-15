@@ -1,12 +1,20 @@
-name: Convert to R15
+name: Convert
 
 on:
   workflow_dispatch:
     inputs:
       mesh_name:
-        description: "Mesh filename inside input_meshes/ (example: model.obj). Leave empty to convert all."
+        description: "Mesh filename inside tests/ (example: model.obj). Leave empty to convert all."
         required: false
         default: ""
+      head_ratio:
+        description: "Head Height Ratio (0.1 to 0.4) - Higher catches more neck/jaw"
+        required: false
+        default: "0.22"
+      torso_ratio:
+        description: "Torso/Leg Split Ratio (0.2 to 0.7) - Higher makes Torso longer"
+        required: false
+        default: "0.45"
 
 jobs:
   convert:
@@ -26,28 +34,30 @@ jobs:
           pip install numpy Cython PyYAML Pillow
           pip install -r requirements.txt
 
-
-
-
       - name: Create output folder
-        run: |
-          mkdir -p output
+        run: mkdir -p output
           
       - name: Run pipeline
         run: |
-          mkdir -p output
+          # Define common arguments based on UI inputs
+          RATIO_ARGS="--head_ratio ${{ github.event.inputs.head_ratio }} --torso_ratio ${{ github.event.inputs.torso_ratio }}"
+          
           if [ -z "${{ github.event.inputs.mesh_name }}" ]; then
-            echo "No specific mesh provided. Converting all..."
+            echo "No specific mesh provided. Converting all files in tests/..."
             for file in tests/*; do
+              # Skip directories if any
+              [ -e "$file" ] || continue
               filename=$(basename "$file")
               name="${filename%.*}"
-              python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
+              echo "Processing $filename..."
+              python -m scripts.run_pipeline "$file" "output/${name}_R15.glb" $RATIO_ARGS
             done
           else
             file="tests/${{ github.event.inputs.mesh_name }}"
             name="${{ github.event.inputs.mesh_name }}"
             name="${name%.*}"
-            python -m scripts.run_pipeline "$file" "output/${name}_R15.glb"
+            echo "Processing $name..."
+            python -m scripts.run_pipeline "$file" "output/${name}_R15.glb" $RATIO_ARGS
           fi
 
       - name: Upload artifact
