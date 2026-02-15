@@ -1,63 +1,27 @@
 import sys
-import yaml
 import os
 import trimesh
-
-from pipeline.preprocess import load_mesh, clean_components
-from pipeline.segment import segment_r15
-from pipeline.split_r15 import split_mesh
+from pipeline.preprocess import load_mesh
 from pipeline.utils import normalize_mesh
-
+from pipeline.segment import segment_r6_components
 
 def main(input_path, output_path):
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-
+    # Load and center (Crucial for X-axis Left/Right detection)
     mesh = load_mesh(input_path)
     mesh = normalize_mesh(mesh)
 
-    # FIXED CONFIG ACCESS
-    export_config = config.get("export", {})
-    if export_config.get("remove_small_components", False):
-        mesh = clean_components(mesh)
+    # NEW: Segment by loose mesh components into R6
+    r6_parts = segment_r6_components(mesh)
 
-    # Segment mesh into R15 labels
-    labels = segment_r15(mesh)
-
-        # Segment mesh into R15 labels
-    labels = segment_r15(mesh)
-
-    # 🔍 DEBUG INFO — ADD HERE
-    print("Vertices:", mesh.vertices.shape[0])
-    print("Faces:", mesh.faces.shape[0])
-    print("Labels type:", type(labels))
-    try:
-        print("Labels length:", len(labels))
-    except Exception:
-        print("Labels has no length")
-
-    # Split mesh into R15 named parts
-    submeshes = split_mesh(mesh, labels)
-
-
-    # Split mesh into R15 named parts
-    submeshes = split_mesh(mesh, labels)
-
-    # Create scene and add each R15 part
+    # Create scene with correct R6 naming
     scene = trimesh.Scene()
-    for part_name, submesh in submeshes.items():
+    for part_name, submesh in r6_parts.items():
         scene.add_geometry(submesh, node_name=part_name)
 
-    # Make sure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-    # Export single GLB
     scene.export(output_path)
-
-    print(f"Exported R15 model to: {output_path}")
-
+    
+    print(f"Successfully exported clean R6 model: {output_path}")
 
 if __name__ == "__main__":
-    input_path = sys.argv[1]
-    output_path = sys.argv[2]
-    main(input_path, output_path)
+    main(sys.argv[1], sys.argv[2])
