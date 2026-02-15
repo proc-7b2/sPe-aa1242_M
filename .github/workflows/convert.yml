@@ -33,7 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libspatialindex-dev
           python -m pip install --upgrade pip setuptools wheel
-          pip install numpy Cython PyYAML Pillow rtree shapely # <--- ADD shapely HERE
+          pip install numpy Cython PyYAML Pillow rtree shapely mapbox_earcut # <--- ADD mapbox_earcut HERE
           pip install -r requirements.txt
 
       - name: Create output folder
