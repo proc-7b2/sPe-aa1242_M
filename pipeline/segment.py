@@ -1,57 +1,72 @@
 import numpy as np
 import trimesh
 
-# Defining the R6 parts first as requested
 R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 
 def segment_r6_components(mesh):
     """
-    Identifies loose meshes and assigns them to R6 categories 
-    without cutting any triangles.
+    Advanced R6 segmentation using 'Core-First' logic to prevent
+    torso/leg merging.
     """
-    # 1. Split the mesh into its natural 'loose' components
     components = mesh.split(only_watertight=False)
     
-    # 2. Get global stats for spatial reference
-    min_bound, max_bound = mesh.bounds
+    # 1. Setup Global References
+    min_b, max_b = mesh.bounds
     center_x = mesh.centroid[0]
-    total_height = max_bound[1] - min_bound[1]
+    full_height = max_b[1] - min_b[1]
     
-    # Storage for our R6 parts
+    # 2. Identify the 'Core Torso' 
+    # The Torso is typically the largest component near the center-top
+    sorted_by_volume = sorted(components, key=lambda c: c.volume if c.is_watertight else c.area, reverse=True)
+    
+    # Potential Torso is the largest mesh that isn't at the very top (Head)
+    torso_core = None
+    for comp in sorted_by_volume:
+        c = comp.centroid
+        # If it's central and in the middle-upper half
+        if abs(c[0] - center_x) < (full_height * 0.2) and c[1] > min_b[1] + (full_height * 0.4):
+            torso_core = comp
+            break
+            
+    # Reference points from our core Torso
+    t_min, t_max = torso_core.bounds
+    torso_bottom_edge = t_min[1] 
+    
     parts = {name: [] for name in R6_NAMES}
     
     for comp in components:
-        # Get the center of this specific loose mesh
         c = comp.centroid
+        c_min, c_max = comp.bounds
         
-        # LOGIC: Categorize based on where the component's center is
-        # Head: The component(s) centered in the top 25% of the model
-        if c[1] > max_bound[1] - (total_height * 0.25):
+        # HEAD: Highest components, or anything entirely above the torso core
+        if c_min[1] > torso_core.centroid[1] and abs(c[0] - center_x) < (full_height * 0.2):
             parts["Head"].append(comp)
             
-        # Legs: Components centered in the bottom 40%, split by X-axis
-        elif c[1] < min_bound[1] + (total_height * 0.4):
+        # LEGS: Anything whose center is below the torso's bottom edge, 
+        # OR anything whose lowest point is the bottom of the whole model.
+        elif c[1] < torso_bottom_edge + (full_height * 0.05) or c_min[1] < min_b[1] + (full_height * 0.1):
             if c[0] < center_x:
                 parts["LeftLeg"].append(comp)
             else:
                 parts["RightLeg"].append(comp)
-        
-        # Middle Section: Torso and Arms
+                
+        # ARMS: Anything significantly to the left/right of the Torso core
+        elif c[0] < t_min[0]:
+            parts["LeftArm"].append(comp)
+        elif c[0] > t_max[0]:
+            parts["RightArm"].append(comp)
+            
+        # TORSO: The core itself and any small bits (buttons, etc.) attached to it
         else:
-            width = max_bound[0] - min_bound[0]
-            # Torso: Is the component centered near the middle X?
-            if abs(c[0] - center_x) < (width * 0.2):
-                parts["Torso"].append(comp)
-            # Arms: Side components
-            elif c[0] < center_x:
-                parts["LeftArm"].append(comp)
-            else:
-                parts["RightArm"].append(comp)
+            parts["Torso"].append(comp)
 
-    # Merge any multiple components found for a single part (e.g., eyes + head)
+    # Concatenate results
     final_r6 = {}
     for name, comps in parts.items():
         if comps:
             final_r6[name] = trimesh.util.concatenate(comps)
+        else:
+            # Fallback for empty parts to prevent pipeline crash
+            final_r6[name] = trimesh.Trimesh() 
             
     return final_r6
