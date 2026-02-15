@@ -1,69 +1,57 @@
 import numpy as np
+import trimesh
 
-R15_NAMES = [
-    "Head",
-    "UpperTorso",
-    "LowerTorso",
-    "LeftUpperArm",
-    "LeftLowerArm",
-    "LeftHand",
-    "RightUpperArm",
-    "RightLowerArm",
-    "RightHand",
-    "LeftUpperLeg",
-    "LeftLowerLeg",
-    "LeftFoot",
-    "RightUpperLeg",
-    "RightLowerLeg",
-    "RightFoot"
-]
+# Defining the R6 parts first as requested
+R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 
-def segment_r15(mesh):
-    vertices = mesh.vertices
-    faces = mesh.faces
-
-    min_y, max_y = mesh.bounds[:, 1]
-    height = max_y - min_y
-
-    head_cut = max_y - height * 0.18
-    torso_upper_cut = max_y - height * 0.35
-    torso_lower_cut = max_y - height * 0.55
-    leg_cut = min_y + height * 0.4
-
-    center_x = mesh.bounding_box.centroid[0]
-
-    # Dictionary of part_name -> set of vertex indices
-    labels = {name: set() for name in R15_NAMES}
-
-    # Assign vertices based on face centroids
-    face_centroids = mesh.triangles_center
-
-    for face_idx, centroid in enumerate(face_centroids):
-        x, y, z = centroid
-        verts = faces[face_idx]  # indices of vertices in this face
-
-        if y > head_cut:
-            labels["Head"].update(verts)
-
-        elif y > torso_upper_cut:
-            labels["UpperTorso"].update(verts)
-
-        elif y > torso_lower_cut:
-            labels["LowerTorso"].update(verts)
-
-        elif y < leg_cut:
-            if x < center_x:
-                labels["LeftUpperLeg"].update(verts)
+def segment_r6_components(mesh):
+    """
+    Identifies loose meshes and assigns them to R6 categories 
+    without cutting any triangles.
+    """
+    # 1. Split the mesh into its natural 'loose' components
+    components = mesh.split(only_watertight=False)
+    
+    # 2. Get global stats for spatial reference
+    min_bound, max_bound = mesh.bounds
+    center_x = mesh.centroid[0]
+    total_height = max_bound[1] - min_bound[1]
+    
+    # Storage for our R6 parts
+    parts = {name: [] for name in R6_NAMES}
+    
+    for comp in components:
+        # Get the center of this specific loose mesh
+        c = comp.centroid
+        
+        # LOGIC: Categorize based on where the component's center is
+        # Head: The component(s) centered in the top 25% of the model
+        if c[1] > max_bound[1] - (total_height * 0.25):
+            parts["Head"].append(comp)
+            
+        # Legs: Components centered in the bottom 40%, split by X-axis
+        elif c[1] < min_bound[1] + (total_height * 0.4):
+            if c[0] < center_x:
+                parts["LeftLeg"].append(comp)
             else:
-                labels["RightUpperLeg"].update(verts)
-
+                parts["RightLeg"].append(comp)
+        
+        # Middle Section: Torso and Arms
         else:
-            if x < center_x:
-                labels["LeftUpperArm"].update(verts)
+            width = max_bound[0] - min_bound[0]
+            # Torso: Is the component centered near the middle X?
+            if abs(c[0] - center_x) < (width * 0.2):
+                parts["Torso"].append(comp)
+            # Arms: Side components
+            elif c[0] < center_x:
+                parts["LeftArm"].append(comp)
             else:
-                labels["RightUpperArm"].update(verts)
+                parts["RightArm"].append(comp)
 
-    # Convert sets to sorted lists
-    labels = {k: sorted(list(v)) for k, v in labels.items()}
-
-    return labels
+    # Merge any multiple components found for a single part (e.g., eyes + head)
+    final_r6 = {}
+    for name, comps in parts.items():
+        if comps:
+            final_r6[name] = trimesh.util.concatenate(comps)
+            
+    return final_r6
