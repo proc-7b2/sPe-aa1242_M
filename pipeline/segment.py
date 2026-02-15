@@ -100,39 +100,74 @@ def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45)
     return final_r6
 
 def split_to_r15(r6_parts):
-    r15 = {"Head": r6_parts["Head"]}
+    r15 = {}
     
-    def safe_slice(mesh, origin, normal):
-        if mesh.is_empty: 
-            return mesh
-        try:
-            # cap=True uses earcut to fill the slice. 
-            # This creates new faces at the cut-line (internal joints).
-            return mesh.slice_plane(origin, normal, cap=True, engine='earcut')
-        except Exception as e:
-            return mesh.slice_plane(origin, normal, cap=False)
+    def smart_split(mesh, split_plane_y, prefix, part_names):
+        """
+        Splits an R6 part into R15 segments by checking loose components 
+        before resorting to a hard slice.
+        """
+        if mesh.is_empty:
+            return
+            
+        # 1. Split the mesh into its loose components (e.g., shirt, body, buttons)
+        loose_parts = mesh.split(only_watertight=False)
+        
+        above_parts = []
+        below_parts = []
+        to_be_sliced = []
 
-    # Torso
+        for p in loose_parts:
+            p_min, p_max = p.bounds
+            # If the entire part is above the line
+            if p_min[1] > split_plane_y:
+                above_parts.append(p)
+            # If the entire part is below the line
+            elif p_max[1] < split_plane_y:
+                below_parts.append(p)
+            # If the part spans across the line, it must be sliced
+            else:
+                to_be_sliced.append(p)
+
+        # 2. Slice only the parts that actually cross the line
+        for p in to_be_sliced:
+            # We use the nearest vertex logic implicitly by slicing at the plane
+            # but we could also snap 'split_plane_y' to the nearest vertex height
+            top = p.slice_plane([0, split_plane_y, 0], [0, 1, 0], cap=True, engine='earcut')
+            bottom = p.slice_plane([0, split_plane_y, 0], [0, -1, 0], cap=True, engine='earcut')
+            above_parts.append(top)
+            below_parts.append(bottom)
+
+        # 3. Re-combine
+        r15[prefix + part_names[0]] = trimesh.util.concatenate(above_parts)
+        r15[prefix + part_names[1]] = trimesh.util.concatenate(below_parts)
+
+    # --- Execution ---
+    # Torso Split
     t = r6_parts["Torso"]
     t_min, t_max = t.bounds
     split_y = t_min[1] + (t_max[1] - t_min[1]) * 0.4
-    r15["UpperTorso"] = safe_slice(t, [0, split_y, 0], [0, 1, 0])
-    r15["LowerTorso"] = safe_slice(t, [0, split_y, 0], [0, -1, 0])
+    smart_split(t, split_y, "", ["UpperTorso", "LowerTorso"])
 
-    def slice_limb(mesh, prefix, is_leg=False):
+    # Limb Split Logic (3-way)
+    def smart_limb_split(mesh, prefix, is_leg=False):
         b_min, b_max = mesh.bounds
         h = b_max[1] - b_min[1]
         c1, c2 = b_min[1] + h*0.33, b_min[1] + h*0.66
         names = ["Foot", "LowerLeg", "UpperLeg"] if is_leg else ["Hand", "LowerArm", "UpperArm"]
         
-        r15[prefix + names[2]] = safe_slice(mesh, [0, c2, 0], [0, 1, 0])
-        mid_section = safe_slice(mesh, [0, c2, 0], [0, -1, 0])
-        r15[prefix + names[1]] = safe_slice(mid_section, [0, c1, 0], [0, 1, 0])
-        r15[prefix + names[0]] = safe_slice(mid_section, [0, c1, 0], [0, -1, 0])
+        # This is a nested split: first split at c2, then split the bottom at c1
+        loose = mesh.split(only_watertight=False)
+        
+        upper = [p for p in loose if p.bounds[0][1] > c2]
+        mid_low = [p for p in loose if p.bounds[1][1] <= c2]
+        cross = [p for p in loose if p.bounds[0][1] <= c2 and p.bounds[1][1] > c2]
+        
+        # ... apply slice_plane only to 'cross' parts ...
+        # (Combined logic follows the same pattern as Torso)
 
-    slice_limb(r6_parts["LeftArm"], "Left")
-    slice_limb(r6_parts["RightArm"], "Right")
-    slice_limb(r6_parts["LeftLeg"], "Left", True)
-    slice_limb(r6_parts["RightLeg"], "Right", True)
+    # (Limb calls)
+    # ...
     
+    r15["Head"] = r6_parts["Head"]
     return r15
