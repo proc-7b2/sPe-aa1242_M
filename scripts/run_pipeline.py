@@ -1,40 +1,36 @@
-import sys
-import os
 import argparse
 import trimesh
+import os
 from pipeline.preprocess import load_mesh
 from pipeline.utils import normalize_mesh
-from pipeline.segment import segment_r6_components
+from pipeline.segment import segment_r6_components, split_to_r15
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert Mesh to R6")
-    parser.add_argument("input", help="Path to input mesh")
-    parser.add_argument("output", help="Path to output GLB")
-    parser.add_argument("--head_ratio", type=float, default=0.22, help="Head height percentage")
-    parser.add_argument("--torso_ratio", type=float, default=0.45, help="Leg start height percentage")
-    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input")
+    parser.add_argument("output")
+    parser.add_argument("--head_ratio", type=float, default=0.22)
+    parser.add_argument("--torso_ratio", type=float, default=0.45)
     args = parser.parse_args()
 
-    # Load and Preprocess
+    # 1. Load & Normalize
     mesh = load_mesh(args.input)
     mesh = normalize_mesh(mesh)
 
-    # Segment using the custom ratios
-    r6_parts = segment_r6_components(
-        mesh, 
-        head_height_ratio=args.head_ratio, 
-        torso_height_ratio=args.torso_ratio
-    )
+    # 2. Segment to R6 (Grouping loose meshes)
+    r6_parts = segment_r6_components(mesh, args.head_ratio, args.torso_ratio)
 
-    # Export Scene
+    # 3. Convert to R15 (Slicing the parts)
+    r15_parts = split_to_r15(r6_parts)
+
+    # 4. Export
     scene = trimesh.Scene()
-    for part_name, submesh in r6_parts.items():
-        scene.add_geometry(submesh, node_name=part_name)
+    for name, data in r15_parts.items():
+        if data and not data.is_empty:
+            scene.add_geometry(data, node_name=name)
 
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
     scene.export(args.output)
-    
-    print(f"Exported with Head Ratio: {args.head_ratio}, Torso Ratio: {args.torso_ratio}")
+    print(f"Successfully converted to R15: {args.output}")
 
 if __name__ == "__main__":
     main()
