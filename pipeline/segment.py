@@ -4,69 +4,61 @@ import trimesh
 R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 
 def segment_r6_components(mesh):
-    """
-    Advanced R6 segmentation using 'Core-First' logic to prevent
-    torso/leg merging.
-    """
+    # 1. Get loose meshes
     components = mesh.split(only_watertight=False)
     
-    # 1. Setup Global References
-    min_b, max_b = mesh.bounds
-    center_x = mesh.centroid[0]
-    full_height = max_b[1] - min_b[1]
+    # 2. Global Bounds
+    bounds_min, bounds_max = mesh.bounds
+    total_height = bounds_max[1] - bounds_min[1]
+    center_x = (bounds_max[0] + bounds_min[0]) / 2
     
-    # 2. Identify the 'Core Torso' 
-    # The Torso is typically the largest component near the center-top
-    sorted_by_volume = sorted(components, key=lambda c: c.volume if c.is_watertight else c.area, reverse=True)
-    
-    # Potential Torso is the largest mesh that isn't at the very top (Head)
-    torso_core = None
-    for comp in sorted_by_volume:
-        c = comp.centroid
-        # If it's central and in the middle-upper half
-        if abs(c[0] - center_x) < (full_height * 0.2) and c[1] > min_b[1] + (full_height * 0.4):
-            torso_core = comp
-            break
-            
-    # Reference points from our core Torso
-    t_min, t_max = torso_core.bounds
-    torso_bottom_edge = t_min[1] 
-    
+    # Thresholds
+    head_threshold = bounds_max[1] - (total_height * 0.15)
+    foot_threshold = bounds_min[1] + (total_height * 0.15)
+    arm_threshold_dist = (bounds_max[0] - bounds_min[0]) * 0.2 # 20% out from center
+
     parts = {name: [] for name in R6_NAMES}
-    
+
     for comp in components:
-        c = comp.centroid
         c_min, c_max = comp.bounds
+        c_center = comp.centroid
         
-        # HEAD: Highest components, or anything entirely above the torso core
-        if c_min[1] > torso_core.centroid[1] and abs(c[0] - center_x) < (full_height * 0.2):
+        # --- LOGIC 1: THE HEAD ---
+        # If the highest point of this piece is in the top 15%
+        if c_max[1] > head_threshold:
             parts["Head"].append(comp)
-            
-        # LEGS: Anything whose center is below the torso's bottom edge, 
-        # OR anything whose lowest point is the bottom of the whole model.
-        elif c[1] < torso_bottom_edge + (full_height * 0.05) or c_min[1] < min_b[1] + (full_height * 0.1):
-            if c[0] < center_x:
+            continue
+
+        # --- LOGIC 2: THE LEGS ---
+        # If the lowest point of this piece is near the bottom floor
+        if c_min[1] < foot_threshold:
+            if c_center[0] < center_x:
                 parts["LeftLeg"].append(comp)
             else:
                 parts["RightLeg"].append(comp)
-                
-        # ARMS: Anything significantly to the left/right of the Torso core
-        elif c[0] < t_min[0]:
-            parts["LeftArm"].append(comp)
-        elif c[0] > t_max[0]:
-            parts["RightArm"].append(comp)
-            
-        # TORSO: The core itself and any small bits (buttons, etc.) attached to it
-        else:
-            parts["Torso"].append(comp)
+            continue
 
-    # Concatenate results
+        # --- LOGIC 3: THE ARMS ---
+        # If the component is far from the center X spine
+        if abs(c_center[0] - center_x) > arm_threshold_dist:
+            if c_center[0] < center_x:
+                parts["LeftArm"].append(comp)
+            else:
+                parts["RightArm"].append(comp)
+            continue
+
+        # --- LOGIC 4: THE TORSO ---
+        # If it hasn't been claimed by head, legs, or arms, it's Torso
+        parts["Torso"].append(comp)
+
+    # Clean up: Merge pieces and handle empty parts
     final_r6 = {}
-    for name, comps in parts.items():
-        if comps:
-            final_r6[name] = trimesh.util.concatenate(comps)
+    for name in R6_NAMES:
+        if parts[name]:
+            final_r6[name] = trimesh.util.concatenate(parts[name])
         else:
-            # Fallback for empty parts to prevent pipeline crash
-            final_r6[name] = trimesh.Trimesh() 
+            # Create a tiny dummy triangle if part is missing to prevent export errors
+            final_r6[name] = trimesh.Trimesh(vertices=[[0,0,0],[0,0.01,0],[0.01,0,0]], faces=[[0,1,2]])
+            print(f"Warning: {name} was empty. Check thresholds.")
             
     return final_r6
