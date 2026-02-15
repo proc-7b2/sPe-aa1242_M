@@ -4,20 +4,17 @@ import trimesh
 R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 
 def repair_mesh_part(mesh):
-    """Clean up and close holes using correct trimesh methods."""
     if mesh.is_empty:
         return mesh
     
-    # Correct trimesh cleanup methods
+    # Basic cleanup
     mesh.remove_infinite_values()
     mesh.remove_unreferenced_vertices()
+    
+    # Try to make it manifold
+    mesh.process(validate=True) 
     mesh.fill_holes()
     
-    # If the mesh is still 'open' (not watertight), this helps seal it
-    if not mesh.is_watertight:
-        # This fixes duplicate/inverted faces which might cause 'holes'
-        mesh.fix_normals()
-        
     return mesh
 
 def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45):
@@ -77,14 +74,16 @@ def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45)
     return final_r6
 
 def split_to_r15(r6_parts):
-    """Slices R6 parts into R15 components and caps the cut ends."""
     r15 = {"Head": r6_parts["Head"]}
     
-    # We use cap=True to fill the hole created by the cut
     def safe_slice(mesh, origin, normal):
         if mesh.is_empty: return mesh
-        # slice_plane returns a mesh with the cut end capped if cap=True
-        return mesh.slice_plane(origin, normal, cap=True)
+        try:
+            # Force engine='earcut' to ensure it uses the library we just installed
+            return mesh.slice_plane(origin, normal, cap=True, engine='earcut')
+        except Exception as e:
+            print(f"Slice warning: {e}. Falling back to non-capped slice.")
+            return mesh.slice_plane(origin, normal, cap=False)
 
     # Torso Split
     t = r6_parts["Torso"]
