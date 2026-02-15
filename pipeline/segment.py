@@ -4,13 +4,20 @@ import trimesh
 R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 
 def repair_mesh_part(mesh):
-    """Aggressively fills holes to ensure a solid look."""
+    """Clean up and close holes using correct trimesh methods."""
     if mesh.is_empty:
         return mesh
-    # Fill holes and remove degenerate faces
-    mesh.fill_holes()
+    
+    # Correct trimesh cleanup methods
     mesh.remove_infinite_values()
-    mesh.remove_duplicate_faces()
+    mesh.remove_unreferenced_vertices()
+    mesh.fill_holes()
+    
+    # If the mesh is still 'open' (not watertight), this helps seal it
+    if not mesh.is_watertight:
+        # This fixes duplicate/inverted faces which might cause 'holes'
+        mesh.fix_normals()
+        
     return mesh
 
 def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45):
@@ -73,10 +80,11 @@ def split_to_r15(r6_parts):
     """Slices R6 parts into R15 components and caps the cut ends."""
     r15 = {"Head": r6_parts["Head"]}
     
-    # CAP_SETTING: cap=True fills the hole created by the slice_plane
+    # We use cap=True to fill the hole created by the cut
     def safe_slice(mesh, origin, normal):
         if mesh.is_empty: return mesh
-        return mesh.slice_plane(origin, normal, cap=True) # <--- CAP=TRUE IS KEY
+        # slice_plane returns a mesh with the cut end capped if cap=True
+        return mesh.slice_plane(origin, normal, cap=True)
 
     # Torso Split
     t = r6_parts["Torso"]
