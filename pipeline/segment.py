@@ -1,22 +1,27 @@
 import numpy as np
 import trimesh
 
-def segment_r15_components(mesh):
+# Change the function definition to this:
+def segment_r15_components(mesh, head_ratio=None, torso_ratio=None):
     """
-    Advanced R15 Segmenter: Uses spatial clustering and local-only slicing
-    to prevent cross-contamination between body parts.
+    Advanced R15 Segmenter: Now accepts optional ratios to stay 
+    compatible with your pipeline script.
     """
-    # 1. Basic Setup
     bounds = mesh.bounds
     center_x = (bounds[0][0] + bounds[1][0]) / 2
     total_height = bounds[1][1] - bounds[0][1]
     total_width = bounds[1][0] - bounds[0][0]
     
-    # Thresholds based on your specific 'Chibi' model proportions
-    head_height_threshold = bounds[1][1] - (total_height * 0.38) # Big head protection
-    hip_line = bounds[0][1] + (total_height * 0.42)
-    arm_gap = total_width * 0.18 # Distance from center to start arm-cut
+    # 1. SMART RATIO LOGIC
+    # If ratios are provided by the UI, use them. Otherwise, use 'Smart' defaults.
+    h_ratio = head_ratio if head_ratio is not None else 0.38
+    t_ratio = torso_ratio if torso_ratio is not None else 0.42
 
+    head_height_threshold = bounds[1][1] - (total_height * h_ratio)
+    hip_line = bounds[0][1] + (total_height * t_ratio)
+    arm_gap = total_width * 0.18 
+
+    # ... (rest of the code from the previous "Robust Version" remains the same)
     final_parts = {}
 
     # --- STEP 1: ISOLATE THE CENTRAL CORE (HEAD & TORSO) ---
