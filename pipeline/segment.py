@@ -1,86 +1,78 @@
 import numpy as np
 import trimesh
 
-R6_NAMES = ["Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
+# R15 Part Names
+R15_NAMES = [
+    "Head", "UpperTorso", "LowerTorso",
+    "LeftUpperArm", "LeftLowerArm", "LeftHand",
+    "RightUpperArm", "RightLowerArm", "RightHand",
+    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+    "RightUpperLeg", "RightLowerLeg", "RightFoot"
+]
 
-def repair_mesh_part(mesh):
-    """Cleans up sliced geometry to ensure it is valid for Roblox/Blender."""
-    if mesh.is_empty:
-        return mesh
-    mesh.merge_vertices(merge_tex=True, merge_norm=True)
-    mesh.remove_infinite_values()
-    mesh.remove_unreferenced_vertices()
-    mesh.fill_holes()
-    if len(mesh.faces) > 8000:
-        target = int(len(mesh.faces) * 0.7)
-        mesh = mesh.simplify_quadratic_decimation(target)
-    mesh.fix_normals()
-    return mesh
+def slice_limb(limb_mesh, is_leg=False):
+    """Sub-slices an R6 limb into Upper, Lower, and End (Hand/Foot) parts."""
+    if limb_mesh.is_empty:
+        return [trimesh.Trimesh()] * 3
+    
+    l_min, l_max = limb_mesh.bounds[0][1], limb_mesh.bounds[1][1]
+    l_height = l_max - l_min
+    
+    # Ratios for sub-limb slicing (Approximate for R15)
+    # Upper: Top 40%, Lower: Middle 40%, Foot/Hand: Bottom 20%
+    cut1 = l_max - (l_height * 0.4)
+    cut2 = l_max - (l_height * 0.8)
+    
+    upper = trimesh.intersections.slice_mesh_plane(limb_mesh, [0, 1, 0], [0, cut1, 0], cap=True)
+    mid_section = trimesh.intersections.slice_mesh_plane(limb_mesh, [0, -1, 0], [0, cut1, 0], cap=True)
+    lower = trimesh.intersections.slice_mesh_plane(mid_section, [0, 1, 0], [0, cut2, 0], cap=True)
+    end_part = trimesh.intersections.slice_mesh_plane(mid_section, [0, -1, 0], [0, cut2, 0], cap=True)
+    
+    return [upper, lower, end_part]
 
-def segment_r6_components(mesh, head_height_ratio=0.22, torso_height_ratio=0.45):
-    """
-    Uses geometric slicing to partition a mesh into 6 R6 parts.
-    Calculates volumes and centers for each part.
-    """
+def segment_r15_components(mesh, head_ratio=0.22, torso_split=0.5):
     bounds_min, bounds_max = mesh.bounds
     total_height = bounds_max[1] - bounds_min[1]
-    total_width = bounds_max[0] - bounds_min[0]
     center_x = (bounds_min[0] + bounds_max[0]) / 2
-
-    # Define the Y-axis cut lines (Up/Down)
-    head_y = bounds_max[1] - (total_height * head_height_ratio)
-    leg_y = bounds_min[1] + (total_height * (1 - head_height_ratio - torso_height_ratio))
     
-    # Define the X-axis cut lines (Side to Side for arms)
-    # Typically arms are the outer 20-25% of the width
-    arm_spread = total_width * 0.25
-    left_arm_x = center_x - arm_spread
-    right_arm_x = center_x + arm_spread
-
-    parts_geometry = {}
-
-    # --- 1. SLICE HEAD ---
-    parts_geometry["Head"] = trimesh.intersections.slice_mesh_plane(
-        mesh, plane_normal=[0, 1, 0], plane_origin=[0, head_y, 0], cap=True)
-
-    # --- 2. SLICE LEGS ---
-    lower_body = trimesh.intersections.slice_mesh_plane(
-        mesh, plane_normal=[0, -1, 0], plane_origin=[0, leg_y, 0], cap=True)
+    # 1. Primary Y-Cuts
+    head_y = bounds_max[1] - (total_height * head_ratio)
+    hip_y = bounds_min[1] + (total_height * 0.4) # Rough leg start
     
-    parts_geometry["LeftLeg"] = trimesh.intersections.slice_mesh_plane(
-        lower_body, plane_normal=[-1, 0, 0], plane_origin=[center_x, 0, 0], cap=True)
-    parts_geometry["RightLeg"] = trimesh.intersections.slice_mesh_plane(
-        lower_body, plane_normal=[1, 0, 0], plane_origin=[center_x, 0, 0], cap=True)
+    final_parts = {}
 
-    # --- 3. SLICE MIDDLE (Torso + Arms) ---
-    # First, isolate the middle band
-    mid_section = trimesh.intersections.slice_mesh_plane(
-        mesh, plane_normal=[0, -1, 0], plane_origin=[0, head_y, 0], cap=True)
-    mid_section = trimesh.intersections.slice_mesh_plane(
-        mid_section, plane_normal=[0, 1, 0], plane_origin=[0, leg_y, 0], cap=True)
+    # --- Head ---
+    final_parts["Head"] = trimesh.intersections.slice_mesh_plane(mesh, [0,1,0], [0, head_y, 0], cap=True)
 
-    # Split middle band into LeftArm, Torso, RightArm
-    parts_geometry["LeftArm"] = trimesh.intersections.slice_mesh_plane(
-        mid_section, plane_normal=[-1, 0, 0], plane_origin=[left_arm_x, 0, 0], cap=True)
+    # --- Torso (Upper & Lower) ---
+    torso_full = trimesh.intersections.slice_mesh_plane(mesh, [0,-1,0], [0, head_y, 0], cap=True)
+    torso_full = trimesh.intersections.slice_mesh_plane(torso_full, [0,1,0], [0, hip_y, 0], cap=True)
     
-    parts_geometry["RightArm"] = trimesh.intersections.slice_mesh_plane(
-        mid_section, plane_normal=[1, 0, 0], plane_origin=[right_arm_x, 0, 0], cap=True)
+    # Split Torso X-axis to remove arms first
+    arm_x_offset = (bounds_max[0] - bounds_min[0]) * 0.2
+    torso_core = trimesh.intersections.slice_mesh_plane(torso_full, [1,0,0], [center_x - arm_x_offset, 0, 0], cap=True)
+    torso_core = trimesh.intersections.slice_mesh_plane(torso_core, [-1,0,0], [center_x + arm_x_offset, 0, 0], cap=True)
     
-    # Torso is what remains in the center
-    torso_temp = trimesh.intersections.slice_mesh_plane(
-        mid_section, plane_normal=[1, 0, 0], plane_origin=[left_arm_x, 0, 0], cap=True)
-    parts_geometry["Torso"] = trimesh.intersections.slice_mesh_plane(
-        torso_temp, plane_normal=[-1, 0, 0], plane_origin=[right_arm_x, 0, 0], cap=True)
+    t_min, t_max = torso_core.bounds[0][1], torso_core.bounds[1][1]
+    t_split_y = t_min + (t_max - t_min) * torso_split
+    final_parts["UpperTorso"] = trimesh.intersections.slice_mesh_plane(torso_core, [0,1,0], [0, t_split_y, 0], cap=True)
+    final_parts["LowerTorso"] = trimesh.intersections.slice_mesh_plane(torso_core, [0,-1,0], [0, t_split_y, 0], cap=True)
 
-    # --- FINAL CLEANUP & DATA ---
-    final_r6 = {}
-    for name in R6_NAMES:
-        m = parts_geometry.get(name, trimesh.Trimesh())
-        repaired = repair_mesh_part(m)
-        
-        # Add metadata to the mesh object for the pipeline to use
-        repaired.metadata['volume'] = repaired.volume
-        repaired.metadata['center'] = repaired.centroid.tolist()
-        final_r6[name] = repaired
-            
-    return final_r6
+    # --- Arms & Legs ---
+    # Isolate Left Arm and slice it
+    l_arm_raw = trimesh.intersections.slice_mesh_plane(torso_full, [-1,0,0], [center_x - arm_x_offset, 0, 0], cap=True)
+    final_parts["LeftUpperArm"], final_parts["LeftLowerArm"], final_parts["LeftHand"] = slice_limb(l_arm_raw)
+    
+    # Isolate Right Arm and slice it
+    r_arm_raw = trimesh.intersections.slice_mesh_plane(torso_full, [1,0,0], [center_x + arm_x_offset, 0, 0], cap=True)
+    final_parts["RightUpperArm"], final_parts["RightLowerArm"], final_parts["RightHand"] = slice_limb(r_arm_raw)
+
+    # Legs
+    legs_raw = trimesh.intersections.slice_mesh_plane(mesh, [0,-1,0], [0, hip_y, 0], cap=True)
+    l_leg_raw = trimesh.intersections.slice_mesh_plane(legs_raw, [-1,0,0], [center_x, 0, 0], cap=True)
+    r_leg_raw = trimesh.intersections.slice_mesh_plane(legs_raw, [1,0,0], [center_x, 0, 0], cap=True)
+    
+    final_parts["LeftUpperLeg"], final_parts["LeftLowerLeg"], final_parts["LeftFoot"] = slice_limb(l_leg_raw, True)
+    final_parts["RightUpperLeg"], final_parts["RightLowerLeg"], final_parts["RightFoot"] = slice_limb(r_leg_raw, True)
+
+    return final_parts
